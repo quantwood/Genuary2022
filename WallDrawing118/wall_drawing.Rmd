@@ -1,0 +1,128 @@
+---
+title: 'Genuary Day 7: Sol LeWitt Wall Drawing'
+author: "J Wood"
+date: "1/7/2022"
+output: html_document
+---
+
+Prompt for Wall Drawing 118:
+
+"On a wall surface, any  
+continuous stretch of wall,  
+using a hard pencil, place  
+fifty points at random.  
+The points should be evenly  
+distributed over the area  
+of the wall. All of the  
+points should be connected  
+by straight lines."  
+
+This procedure sounds simple enough to execute with code - the directions are clear enough. Random points are easy to generate (although true random points may differ somewhat from aesthetically "random" points). Then all you need to do is connect all points to all other unique points - something which can be expressed with an exact mathematical formula.
+
+But - this is not necessarily a task tools built to make plots of actual data are easily suited to do. Connecting points in all possible ways is rarely desirable on a data front. It became clear that my old college nemesis combinatorics was going to make an appearance in figuring out how to calculate the edges of this problem.
+
+Sol LeWitt also said "all intervening steps, scribbles, sketches, drawings, failed work models, studies, thoughts, conversations are of interest. Those that show the thought process of the artist are sometimes more interesting than the final product."
+
+As anyone with virtually any coding experience knows, the process of making mistakes is where the majority of learning occurs. So the following documents my approach to translating this prompt into a plot executable in R
+
+
+
+## Creating a plan
+The directions give us the framework of some pseudocode to start with:
+
+1. Generate random points
+2. Connect all points with lines
+
+My chosen tool of execution is `ggplot2`. Step 1 is easy enough: generate *n* random points by making *n* draws from 2 uniform distributions - one for x-coordinates one for y-coordinates.
+
+The second step is more challenging. By default, `geom_line()` will connect points in order. Connecting all points to all other points - this will require some data set-up.
+
+My solution to this problem (I'm sure it's not the *most* elegant, but it will work) is to create a grouping variable that will identify all unique pairings of points - the grouping variable can then be used with `geom_line()` to connect all points
+
+### Step 1: Generating random points and data set-up
+Well, step 1 is easy. I simply define `n` - the number of points I want to make, then draw `n` x and y coordinates from `runif()` - the boundaries are arbitrary - I suppose you can stretch or shrink them to make the plane more "wall-like" in dimension.
+
+I also set up an identifying variable for each point - I suspect this will be useful in the next step, where I will need to identify all unique combinations of the points to create my edges.
+```{r}
+#n random points in Cartesian plane
+set.seed(42)
+n <- 30
+pts_x <- runif(n, min = 0,max = 100)
+pts_y <- runif(n, min = 0, max = 100)
+
+#unique identifier of points
+pt_id <- paste0("P",seq(1,n))
+
+#create data frame
+dat <- data.frame(cbind(pt_id,pts_x,pts_y))
+head(dat)
+```
+
+### Step 2: Identifying unique combinations of points
+This is the part where the math comes in. I know my goal: to identify all unique combinations of points - these will define the lines I'm trying to draw.
+
+I'll be honest, combinatorics doesn't come naturally to me - so I usually start with small-scale case studies with pen and paper in order to identify the pattern.
+
+After some doodling with 3 and 4 points, I found that the formula for the number of edges with $n$ points is $(n-1)+(n-2)+...+(n-(n-1))$
+
+With some light googling, I found that the formula for adding sequential integers works out to
+$$\sum_{k=1}^{K} k = 1+2+...(K-1)+K = \frac{K(K+1)}{2}$$
+So plugging in $(n-1)$ for $K$, the number of unique lines for $n$ points will be $\frac{n(n-1)}{2}$. This also happens to be the formula for the binomial coefficient of "n choose 2". Which...now that I've arrived at this point, I realize I could have just started with binomial combination principles...but like I said, I'm a little rusty on my combinatorics. 
+
+But this binomial coefficient will come in handy, because that means I can use a ready-made function (`combn()`) on my vector of point ids to generate all the unique combinations.
+```{r}
+#get data frame of point id combinations
+unique_combos <- data.frame(t(combn(x = pt_id, m = 2)))
+
+#create group id factor
+unique_combos$group_id <- paste0("G", 1:nrow(unique_combos))
+
+head(unique_combos)
+```
+
+
+### Step 3: Data set-up for lines
+Okay, so now I have a data frame of xy-coordinates with point IDs, and a data frame of point combinations with group IDs.
+
+I'll need a single long data frame for my plot to work - so first I need to expand the point combination data frame so that each row contains one point + the point's grouping ID.
+
+Then once I have that set up, I can merge the xy-coordinates by point ID. And I'll be ready to plot!
+```{r}
+library(tidyr)
+
+#Making combo data frame long
+combos_long <- reshape(unique_combos, 
+        direction = "long",
+        varying = c("X1", "X2"),
+        v.names = "pt_id",
+        times = c("1", "2"),
+        timevar = "occurance",
+        idvar = "group_id")
+
+head(combos_long)
+
+merged_long <- merge(combos_long, dat, by = "pt_id")
+```
+
+
+
+### Step 4: Plotting
+Okay, on to the fun stuff! With the data set up I did, we just need plot every x and y coordinate of the points, then group by `group_id` in `geom_line()` to connect the individual points. I also use `theme_void()` to mimic a wall, and dial the alpha down on `geom_line()` to mimic a pencil drawing a little better.
+```{r}
+library(ggplot2)
+library(ggthemes)
+
+
+p <- ggplot(data = merged_long, aes(x = pts_x, y = pts_y))+
+  geom_line(aes(group = group_id), alpha = .6, color = "grey20")+
+  theme_void()
+p
+
+ggsave("Genuary_WallDrawing118.jpg", plot = p, width = 8, height = 5)
+```
+
+
+
+
+
+
